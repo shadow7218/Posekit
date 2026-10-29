@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>iPhone 3D Wallpaper Studio — Liquid Glass Lock Screen Preview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.35); }
+
+    .glass-panel {
+      background: rgba(18, 18, 24, 0.85);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .glass-button {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .glass-button:hover {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+    }
+    .glass-button.active {
+      background: rgba(59, 130, 246, 0.3);
+      border-color: rgba(96, 165, 250, 0.6);
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.25);
+    }
+    .preset-chip { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .preset-chip:hover { transform: scale(1.05); }
+    .preset-chip.active { outline: 2px solid #3b82f6; outline-offset: 2px; }
+    #flat-mockup-wrapper { transition: opacity 0.3s ease; }
+  </style>
+</head>
+<body class="bg-[#0b0c10] text-gray-100 h-screen w-screen relative overflow-hidden">
+
+  <!-- 3D Canvas Container -->
+  <div id="canvas-container" class="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing z-0"></div>
+
+  <!-- 2D Flat Mockup View -->
+  <div id="flat-mockup-wrapper" class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 hidden">
+    <div
+      id="flat-iphone"
+      class="relative pointer-events-auto transition-transform duration-300 hover:scale-[1.01] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] border-[10px] rounded-[54px] overflow-hidden flex flex-col justify-between"
+      style="width: 320px; height: 650px; background-color: #0b0b0e; border-color: #4b4845;"
+    >
+      <div class="relative w-full h-full flex flex-col overflow-hidden rounded-[44px]">
+        <canvas id="flat-screen-canvas" class="absolute inset-0 w-full h-full object-cover"></canvas>
+
+        <!-- Dynamic Island (Pro models) -->
+        <div id="flat-island" class="absolute top-3 left-1/2 -translate-x-1/2 bg-black rounded-full h-7 w-28 flex items-center justify-between px-3 z-30 shadow-md">
+          <div class="w-2.5 h-2.5 rounded-full bg-[#0a1220]/80"></div>
+          <div class="w-2.5 h-2.5 rounded-full bg-[#040812]"></div>
+        </div>
+
+        <!-- Notch (iPhone 13) -->
+        <div id="flat-notch" class="absolute top-0 left-1/2 -translate-x-1/2 bg-black rounded-b-2xl z-30 shadow-md" style="display: none; width: 150px; height: 28px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="absolute top-4 left-4 right-4 z-30 flex justify-between items-center pointer-events-none">
+    <div class="pointer-events-auto flex items-center gap-3 glass-panel px-4 py-2.5 rounded-2xl shadow-2xl">
+      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+        <i data-lucide="smartphone" class="w-4 h-4 text-white"></i>
+      </div>
+      <div>
+        <h1 class="text-xs font-bold tracking-wider uppercase text-gray-200">iPhone 3D Studio</h1>
+        <p class="text-[10px] text-gray-400 font-medium tracking-tight">Liquid Glass Lock Screen Preview</p>
+      </div>
+    </div>
+
+    <div class="pointer-events-auto flex items-center gap-2">
+      <div class="glass-panel p-1 rounded-2xl flex items-center gap-1">
+        <button id="view-mode-3d" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/20 text-white flex items-center gap-1.5 transition-all">
+          <i data-lucide="box" class="w-3.5 h-3.5"></i> 3D Orbit
+        </button>
+        <button id="view-mode-2d" class="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white flex items-center gap-1.5 transition-all">
+          <i data-lucide="layout" class="w-3.5 h-3.5"></i> 2D Frame
+        </button>
+      </div>
+
+      <button id="btn-autorotate" class="glass-panel glass-button p-2.5 rounded-2xl text-gray-300 hover:text-white flex items-center gap-2 text-xs font-medium" title="Toggle Auto Rotation">
+        <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+        <span class="hidden md:inline">Spin</span>
+      </button>
+
+      <div class="glass-panel rounded-2xl flex items-center overflow-hidden">
+        <select id="export-mode" class="bg-transparent text-xs font-semibold text-gray-200 px-3 py-2.5 focus:outline-none cursor-pointer">
+          <option value="screen">Screen only</option>
+          <option value="full">Full mockup</option>
+          <option value="transparent">Transparent PNG</option>
+        </select>
+        <button id="btn-screenshot" class="bg-gradient-to-r from-blue-600/90 to-indigo-600/90 hover:from-blue-500 hover:to-indigo-500 text-white px-4 py-2.5 flex items-center gap-2 text-xs font-semibold shadow-lg shadow-blue-500/25 border-l border-blue-400/40 transition-all hover:scale-105 active:scale-95" title="Download Mockup">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          <span>Export</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Camera presets -->
+  <div id="camera-presets-bar" class="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-auto glass-panel px-2 py-1 rounded-2xl flex items-center gap-1 text-xs">
+    <button class="cam-preset-btn px-2.5 py-1 rounded-xl text-white font-medium bg-white/20" data-view="front">Front</button>
+    <button class="cam-preset-btn px-2.5 py-1 rounded-xl text-gray-400 hover:text-white font-medium" data-view="angled">Isometric</button>
+    <button class="cam-preset-btn px-2.5 py-1 rounded-xl text-gray-400 hover:text-white font-medium" data-view="back">Camera Bump</button>
+    <button class="cam-preset-btn px-2.5 py-1 rounded-xl text-gray-400 hover:text-white font-medium" data-view="side">Side Edge</button>
+  </div>
+
+  <!-- Left controls -->
+  <aside id="controls-panel" class="absolute left-4 bottom-4 top-28 w-80 max-w-[calc(100vw-2rem)] z-20 flex flex-col pointer-events-none transition-all duration-300">
+    <div class="pointer-events-auto glass-panel rounded-3xl p-4 flex-1 flex flex-col gap-4 overflow-y-auto shadow-2xl">
+
+      <div>
+        <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+          <span>iPhone Model</span>
+          <span id="model-badge" class="text-[10px] text-blue-400 font-mono font-bold">16 Pro Max</span>
+        </label>
+        <div class="grid grid-cols-2 gap-1.5 p-1 bg-black/40 rounded-xl border border-white/5">
+          <button class="model-btn active px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all" data-model="16promax">16 Pro Max</button>
+          <button class="model-btn px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-gray-400 hover:text-white" data-model="15pro">15 Pro</button>
+          <button class="model-btn px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-gray-400 hover:text-white" data-model="14pro">14 Pro</button>
+          <button class="model-btn px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-gray-400 hover:text-white" data-model="13">iPhone 13</button>
+        </div>
+      </div>
+
+      <div>
+        <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 block">
+          Chassis Finish: <span id="color-name" class="text-gray-200 capitalize font-medium">Natural Titanium</span>
+        </label>
+        <div id="chassis-swatches" class="flex items-center gap-2.5 flex-wrap"></div>
+      </div>
+
+      <div class="h-px bg-white/10 my-0.5"></div>
+
+      <div>
+        <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 block">Screen Overlay Mode</label>
+        <div class="grid grid-cols-3 gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
+          <button class="mode-btn active py-1.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-all" data-mode="lock">
+            <i data-lucide="lock" class="w-3.5 h-3.5"></i> Lock
+          </button>
+          <button class="mode-btn py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white flex items-center justify-center gap-1.5 transition-all" data-mode="home">
+            <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i> Home
+          </button>
+          <button class="mode-btn py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white flex items-center justify-center gap-1.5 transition-all" data-mode="clean">
+            <i data-lucide="image" class="w-3.5 h-3.5"></i> Clean
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Wallpaper Gallery</label>
+          <label for="wallpaper-input" class="cursor-pointer text-[11px] text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 bg-blue-500/10 hover:bg-blue-500/20 px-2 py-1 rounded-lg border border-blue-500/20">
+            <i data-lucide="upload" class="w-3 h-3"></i> Upload Image
+          </label>
+          <input type="file" id="wallpaper-input" accept="image/*" class="hidden" />
+        </div>
+
+        <div class="grid grid-cols-4 gap-2">
+          <button class="preset-chip active relative h-14 rounded-xl overflow-hidden border border-white/20 shadow-md group" data-preset="gradient-aurora">
+            <div class="absolute inset-0 bg-gradient-to-tr from-violet-600 via-pink-500 to-amber-300 group-hover:scale-110 transition-transform"></div>
+            <span class="absolute bottom-1 inset-x-0 text-center text-[9px] font-semibold text-white/90 drop-shadow">Aurora</span>
+          </button>
+          <button class="preset-chip relative h-14 rounded-xl overflow-hidden border border-white/10 shadow-md group" data-preset="cyber-neon">
+            <div class="absolute inset-0 bg-gradient-to-b from-[#08020f] via-[#200052] to-[#ff007f] group-hover:scale-110 transition-transform"></div>
+            <span class="absolute bottom-1 inset-x-0 text-center text-[9px] font-semibold text-white/90 drop-shadow">Neon</span>
+          </button>
+          <button class="preset-chip relative h-14 rounded-xl overflow-hidden border border-white/10 shadow-md group" data-preset="dark-oled">
+            <div class="absolute inset-0 bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-800 group-hover:scale-110 transition-transform"></div>
+            <span class="absolute bottom-1 inset-x-0 text-center text-[9px] font-semibold text-white/90 drop-shadow">OLED</span>
+          </button>
+          <button class="preset-chip relative h-14 rounded-xl overflow-hidden border border-white/10 shadow-md group" data-preset="deep-ocean">
+            <div class="absolute inset-0 bg-gradient-to-tr from-cyan-600 via-blue-700 to-indigo-950 group-hover:scale-110 transition-transform"></div>
+            <span class="absolute bottom-1 inset-x-0 text-center text-[9px] font-semibold text-white/90 drop-shadow">Ocean</span>
+          </button>
+          <button class="preset-chip relative h-14 rounded-xl overflow-hidden border border-white/10 shadow-md group" data-preset="desert-dunes">
+            <div class="absolute inset-0 bg-gradient-to-tr from-amber-700 via-orange-500 to-rose-300 group-hover:scale-110 transition-transform"></div>
+            <span class="absolute bottom-1 inset-x-0 text-center text-[9px] font-semibold text-white/90 drop-shadow">Desert</span>
+          </button>
+          <button class="preset-chip relative h-14 rounded-xl overflow-hidden border border-white/10 shadow-md group" data-preset="retro-waves">
+            <div class="absolute inset-0 bg-gradient-to-b from-indigo-950 via-purple-800 to-pink-500 group-hover:scale-110 transition-transform"></div>
+            <span class="absolute bottom-1 inset-x-0 text-center text-[9px] font-semibold text-white/90 drop-shadow">Sunset</span>
+          </button>
+          <button class="preset-chip relative h-14 rounded-xl overflow-hidden border border-white/10 shadow-md group" data-preset="emerald-mist">
+            <div class="absolute inset-0 bg-gradient-to-br from-emerald-950 via-teal-700 to-emerald-400 group-hover:scale-110 transition-transform"></div>
+            <span class="absolute bottom-1 inset-x-0 text-center text-[9px] font-semibold text-white/90 drop-shadow">Emerald</span>
+          </button>
+          <button class="preset-chip relative h-14 rounded-xl overflow-hidden border border-white/10 shadow-md group" data-preset="minimal-mesh">
+            <div class="absolute inset-0 bg-gradient-to-tr from-slate-900 via-zinc-800 to-neutral-400 group-hover:scale-110 transition-transform"></div>
+            <span class="absolute bottom-1 inset-x-0 text-center text-[9px] font-semibold text-white/90 drop-shadow">Slate</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="lockscreen-settings" class="space-y-2 pt-2 border-t border-white/10">
+        <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block">Lock Screen Clock Color</label>
+        <div class="flex items-center gap-3">
+          <input type="color" id="clock-color" value="#ffffff" class="w-8 h-8 rounded-lg cursor-pointer bg-transparent border border-white/20 p-0" />
+          <span class="text-xs text-gray-300 font-mono">#ffffff</span>
+        </div>
+      </div>
+
+      <div class="space-y-2 pt-2 border-t border-white/10">
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-gray-400">Glass Blur <span class="text-blue-400 font-mono" id="glass-blur-val">40px</span></span>
+          <input type="range" id="glass-blur" min="0" max="80" step="2" value="40" class="w-28 accent-blue-500 cursor-pointer" />
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-gray-400">Screen Reflection</span>
+          <input type="range" id="glass-reflection" min="0" max="0.8" step="0.05" value="0.3" class="w-28 accent-blue-500 cursor-pointer" />
+        </div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-gray-400">Studio Backdrop</span>
+          <select id="stage-bg" class="bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-gray-300 focus:outline-none cursor-pointer">
+            <option value="dark">Dark Minimal</option>
+            <option value="midnight">Deep Midnight</option>
+            <option value="warm">Warm Studio</option>
+            <option value="pure">Pure Black</option>
+          </select>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+  <div class="absolute bottom-4 right-4 z-10 glass-panel px-3.5 py-2 rounded-2xl text-[11px] text-gray-400 flex items-center gap-3 pointer-events-none shadow-xl">
+    <div class="flex items-center gap-1.5 text-blue-400 font-medium">
+      <i data-lucide="move" class="w-3.5 h-3.5"></i>
+      <span>Left Click: Rotate</span>
+    </div>
+    <span class="text-white/20">•</span>
+    <span>Scroll: Zoom</span>
+    <span class="text-white/20">•</span>
+    <span>Right Click: Pan</span>
+  </div>
+
+  <!-- Off-screen screen texture (device-pixel dimensions for crisp export) -->
+  <canvas id="screen-canvas" width="1170" height="2532" class="hidden"></canvas>
+
+  <script>
+    lucide.createIcons();
+
+    /* =========================================================================
+       DEVICE SPECS
+       ========================================================================= */
+    const DEVICE_MODELS = {
+      '16promax': {
+        name: 'iPhone 16 Pro Max',
+        width: 7.76, height: 16.3, depth: 0.825, bezel: 0.14, radius: 0.95,
+        notchType: 'island', islandWidth: 1.45, islandHeight: 0.42, islandTop: 0.7,
+        cameraStyle: 'triple-large',
+        colors: [
+          { name: 'Natural Titanium', hex: '#9f9b92', backHex: '#88857d', metalness: 0.85, roughness: 0.32 },
+          { name: 'Black Titanium', hex: '#373639', backHex: '#252427', metalness: 0.9, roughness: 0.3 },
+          { name: 'White Titanium', hex: '#ebeae6', backHex: '#d8d7d3', metalness: 0.85, roughness: 0.35 },
+          { name: 'Desert Titanium', hex: '#c5a78c', backHex: '#b2957b', metalness: 0.85, roughness: 0.33 }
+        ]
+      },
+      '15pro': {
+        name: 'iPhone 15 Pro',
+        width: 7.06, height: 14.66, depth: 0.825, bezel: 0.16, radius: 0.9,
+        notchType: 'island', islandWidth: 1.42, islandHeight: 0.42, islandTop: 0.65,
+        cameraStyle: 'triple',
+        colors: [
+          { name: 'Natural Titanium', hex: '#9d9991', backHex: '#85827b', metalness: 0.85, roughness: 0.32 },
+          { name: 'Blue Titanium', hex: '#3a4454', backHex: '#2d3542', metalness: 0.9, roughness: 0.3 },
+          { name: 'White Titanium', hex: '#e8e7e3', backHex: '#d5d4d0', metalness: 0.85, roughness: 0.35 },
+          { name: 'Black Titanium', hex: '#323234', backHex: '#202022', metalness: 0.9, roughness: 0.3 }
+        ]
+      },
+      '14pro': {
+        name: 'iPhone 14 Pro',
+        width: 7.15, height: 14.75, depth: 0.785, bezel: 0.19, radius: 0.85,
+        notchType: 'island', islandWidth: 1.45, islandHeight: 0.42, islandTop: 0.65,
+        cameraStyle: 'triple',
+        colors: [
+          { name: 'Deep Purple', hex: '#483f52', backHex: '#3b3245', metalness: 0.95, roughness: 0.2 },
+          { name: 'Gold', hex: '#e5d7be', backHex: '#f3e8d2', metalness: 0.98, roughness: 0.18 },
+          { name: 'Silver', hex: '#e2e4e6', backHex: '#f1f2f4', metalness: 0.95, roughness: 0.18 },
+          { name: 'Space Black', hex: '#262628', backHex: '#1b1b1d', metalness: 0.95, roughness: 0.22 }
+        ]
+      },
+      '13': {
+        name: 'iPhone 13',
+        width: 7.15, height: 14.67, depth: 0.765, bezel: 0.24, radius: 0.8,
+        notchType: 'notch', notchWidth: 1.8, notchHeight: 0.5, notchTop: 0.3,
+        cameraStyle: 'diagonal-dual',
+        colors: [
+          { name: 'Midnight', hex: '#232a31', backHex: '#171c21', metalness: 0.7, roughness: 0.45 },
+          { name: 'Starlight', hex: '#f0ebe3', backHex: '#faf6f0', metalness: 0.6, roughness: 0.4 },
+          { name: 'Blue', hex: '#275876', backHex: '#204963', metalness: 0.7, roughness: 0.4 },
+          { name: 'Pink', hex: '#f9d5d3', backHex: '#fae3e1', metalness: 0.6, roughness: 0.45 },
+          { name: 'Product RED', hex: '#b91c2c', backHex: '#a01220', metalness: 0.7, roughness: 0.4 }
+        ]
+      }
+    };
+
+    const state = {
+      modelKey: '16promax',
+      colorIndex: 0,
+      overlayMode: 'lock',
+      currentPreset: 'gradient-aurora',
+      customWallpaperImage: null,
+      clockColor: '#ffffff',
+      autoRotate: false,
+      glassReflection: 0.3,
+      glassBlur: 40,
+      stageBg: 'dark',
+      viewMode: '3d',
+      time: '9:41'
+    };
+
+    /* =========================================================================
+       THREE.JS
+       ========================================================================= */
+    const container = document.getElementById('canvas-container');
+    let scene, camera, renderer, controls;
+    const phoneGroup = new THREE.Group();
+    let screenMesh, screenGlassMesh;
+    let screenTexture, screenCanvas, screenCtx;
+    const chassisMaterials = {};
+
+    function initThree() {
+      if (typeof THREE === 'undefined') {
+        console.warn('Three.js failed to load — switching to 2D view.');
+        toggleViewMode('2d');
+        return;
+      }
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0a0b10);
+
+      const aspect = (container.clientWidth || window.innerWidth) / (container.clientHeight || window.innerHeight);
+      camera = new THREE.PerspectiveCamera(40, aspect, 0.1, 100);
+      camera.position.set(0, 0, 32);
+
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        preserveDrawingBuffer: true,
+        powerPreference: 'high-performance'
+      });
+      renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.2;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
+
+      if (typeof THREE.OrbitControls !== 'undefined') {
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.minDistance = 12;
+        controls.maxDistance = 60;
+        controls.maxPolarAngle = Math.PI - 0.1;
+      }
+
+      setupLighting();
+
+      screenCanvas = document.getElementById('screen-canvas');
+      screenCtx = screenCanvas.getContext('2d');
+      screenTexture = new THREE.CanvasTexture(screenCanvas);
+      screenTexture.generateMipmaps = true;
+      screenTexture.minFilter = THREE.LinearMipmapLinearFilter;
+      screenTexture.magFilter = THREE.LinearFilter;
+
+      // Set 2D mirror canvas dimensions once (avoids per-render clears)
+      const flatCanvas = document.getElementById('flat-screen-canvas');
+      if (flatCanvas) {
+        flatCanvas.width = screenCanvas.width;
+        flatCanvas.height = screenCanvas.height;
+      }
+
+      scene.add(phoneGroup);
+
+      const shadowGeo = new THREE.PlaneGeometry(60, 60);
+      const shadowMat = new THREE.ShadowMaterial({ opacity: 0.35 });
+      const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+      shadowMesh.position.z = -1.8;
+      shadowMesh.receiveShadow = true;
+      scene.add(shadowMesh);
+
+      buildPhoneModel(state.modelKey);
+      renderScreenTexture();
+
+      window.addEventListener('resize', onWindowResize);
+      animate();
+    }
+
+    function setupLighting() {
+      scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+
+      const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+      keyLight.position.set(12, 16, 24);
+      keyLight.castShadow = true;
+      scene.add(keyLight);
+
+      const fillLight = new THREE.DirectionalLight(0x90b8f8, 1.2);
+      fillLight.position.set(-15, 6, 14);
+      scene.add(fillLight);
+
+      const rimLight = new THREE.DirectionalLight(0xffedd5, 1.6);
+      rimLight.position.set(0, -12, -18);
+      scene.add(rimLight);
+
+      const frontSoft = new THREE.DirectionalLight(0xffffff, 0.9);
+      frontSoft.position.set(0, 0, 28);
+      scene.add(frontSoft);
+    }
+
+    function onWindowResize() {
+      if (!renderer || !camera) return;
+      const w = container.clientWidth || window.innerWidth;
+      const h = container.clientHeight || window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+
+    function createRoundedRectShape(w, h, r) {
+      const shape = new THREE.Shape();
+      const x0 = -w / 2, y0 = -h / 2;
+      shape.moveTo(x0 + r, y0);
+      shape.lineTo(x0 + w - r, y0);
+      shape.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+      shape.lineTo(x0 + w, y0 + h - r);
+      shape.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+      shape.lineTo(x0 + r, y0 + h);
+      shape.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+      shape.lineTo(x0, y0 + r);
+      shape.quadraticCurveTo(x0, y0, x0 + r, y0);
+      return shape;
+    }
+
+    function buildPhoneModel(modelKey) {
+      while (phoneGroup.children.length > 0) {
+        const obj = phoneGroup.children[0];
+        if (obj.geometry) obj.geometry.dispose();
+        phoneGroup.remove(obj);
+      }
+
+      const spec = DEVICE_MODELS[modelKey];
+      const currentColor = spec.colors[state.colorIndex] || spec.colors[0];
+
+      chassisMaterials.metal = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(currentColor.hex),
+        metalness: currentColor.metalness,
+        roughness: currentColor.roughness
+      });
+
+      chassisMaterials.backGlass = new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color(currentColor.backHex),
+        metalness: 0.15, roughness: 0.28, clearcoat: 0.7
+      });
+
+      chassisMaterials.cameraBump = new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color(currentColor.backHex),
+        metalness: 0.15, roughness: 0.25, clearcoat: 0.8
+      });
+
+      chassisMaterials.lensOuter = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(0x1a1a1d), metalness: 0.95, roughness: 0.2
+      });
+
+      chassisMaterials.lensGlass = new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color(0x020814), metalness: 0.9, roughness: 0.08,
+        transmission: 0.7, clearcoat: 1.0
+      });
+
+      const chassisShape = createRoundedRectShape(spec.width, spec.height, spec.radius);
+      const extrudeSettings = {
+        depth: spec.depth, bevelEnabled: true, bevelSegments: 6,
+        steps: 1, bevelSize: 0.11, bevelThickness: 0.11
+      };
+      const bodyGeo = new THREE.ExtrudeGeometry(chassisShape, extrudeSettings);
+      bodyGeo.center();
+      const bodyMesh = new THREE.Mesh(bodyGeo, chassisMaterials.metal);
+      bodyMesh.castShadow = true;
+      bodyMesh.receiveShadow = true;
+      phoneGroup.add(bodyMesh);
+
+      const backPlateGeo = new THREE.ShapeGeometry(createRoundedRectShape(spec.width - 0.2, spec.height - 0.2, spec.radius - 0.1));
+      const backPlateMesh = new THREE.Mesh(backPlateGeo, chassisMaterials.backGlass);
+      backPlateMesh.position.z = -(spec.depth / 2 + 0.115);
+      backPlateMesh.rotation.y = Math.PI;
+      phoneGroup.add(backPlateMesh);
+
+      const appleLogoGeo = new THREE.CircleGeometry(0.42, 32);
+      const appleLogoMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.9, roughness: 0.2 });
+      const appleLogoMesh = new THREE.Mesh(appleLogoGeo, appleLogoMat);
+      appleLogoMesh.position.set(0, 0.4, -(spec.depth / 2 + 0.12));
+      appleLogoMesh.rotation.y = Math.PI;
+      phoneGroup.add(appleLogoMesh);
+
+      buildCameraSystem(spec);
+      buildButtons(spec);
+
+      const screenW = spec.width - spec.bezel * 2;
+      const screenH = spec.height - spec.bezel * 2;
+      const screenShape = createRoundedRectShape(screenW, screenH, spec.radius - spec.bezel);
+      const screenGeo = new THREE.ShapeGeometry(screenShape);
+
+      const pos = screenGeo.attributes.position;
+      const uvs = [];
+      for (let i = 0; i < pos.count; i++) {
+        const u = (pos.getX(i) + screenW / 2) / screenW;
+        const v = (pos.getY(i) + screenH / 2) / screenH;
+        uvs.push(u, v);
+      }
+      screenGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+
+      const screenMat = new THREE.MeshBasicMaterial({ map: screenTexture, toneMapped: false });
+      screenMesh = new THREE.Mesh(screenGeo, screenMat);
+      screenMesh.position.z = spec.depth / 2 + 0.116;
+      phoneGroup.add(screenMesh);
+
+      const glassMat = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff, transparent: true, opacity: state.glassReflection,
+        roughness: 0.08, metalness: 0.05, clearcoat: 1.0,
+        transmission: 0.3, depthWrite: false
+      });
+      screenGlassMesh = new THREE.Mesh(screenGeo, glassMat);
+      screenGlassMesh.position.z = spec.depth / 2 + 0.12;
+      phoneGroup.add(screenGlassMesh);
+
+      buildFrontCutout(spec);
+    }
+
+    function buildCameraSystem(spec) {
+      const isTriple = spec.cameraStyle.includes('triple');
+      const bumpW = isTriple ? 3.3 : 2.7;
+      const bumpH = isTriple ? 3.5 : 2.9;
+      const bumpR = 0.65;
+      const bumpZ = -(spec.depth / 2 + 0.11 + 0.18);
+
+      const bumpShape = createRoundedRectShape(bumpW, bumpH, bumpR);
+      const bumpGeo = new THREE.ExtrudeGeometry(bumpShape, {
+        depth: 0.18, bevelEnabled: true, bevelSize: 0.08, bevelThickness: 0.08, bevelSegments: 4
+      });
+      const bumpMesh = new THREE.Mesh(bumpGeo, chassisMaterials.cameraBump);
+      const posX = -spec.width / 2 + bumpW / 2 + 0.45;
+      const posY = spec.height / 2 - bumpH / 2 - 0.45;
+      bumpMesh.position.set(posX, posY, bumpZ);
+      bumpMesh.rotation.y = Math.PI;
+      bumpMesh.castShadow = true;
+      phoneGroup.add(bumpMesh);
+
+      const lensCoords = isTriple
+        ? [{ x: posX + 0.72, y: posY + 0.8 }, { x: posX + 0.72, y: posY - 0.8 }, { x: posX - 0.75, y: posY }]
+        : [{ x: posX + 0.55, y: posY + 0.55 }, { x: posX - 0.55, y: posY - 0.55 }];
+      const lensRadius = isTriple ? 0.62 : 0.55;
+
+      lensCoords.forEach(coord => {
+        const ringGeo = new THREE.CylinderGeometry(lensRadius, lensRadius + 0.05, 0.22, 32);
+        ringGeo.rotateX(Math.PI / 2);
+        const ringMesh = new THREE.Mesh(ringGeo, chassisMaterials.metal);
+        ringMesh.position.set(coord.x, coord.y, -(spec.depth / 2 + 0.42));
+        phoneGroup.add(ringMesh);
+
+        const innerGeo = new THREE.CylinderGeometry(lensRadius - 0.07, lensRadius - 0.07, 0.24, 32);
+        innerGeo.rotateX(Math.PI / 2);
+        const innerMesh = new THREE.Mesh(innerGeo, chassisMaterials.lensGlass);
+        innerMesh.position.set(coord.x, coord.y, -(spec.depth / 2 + 0.43));
+        phoneGroup.add(innerMesh);
+
+        const pupilGeo = new THREE.CircleGeometry(0.18, 16);
+        const pupilMesh = new THREE.Mesh(pupilGeo, new THREE.MeshBasicMaterial({ color: 0x050e18 }));
+        pupilMesh.rotation.y = Math.PI;
+        pupilMesh.position.set(coord.x, coord.y, -(spec.depth / 2 + 0.555));
+        phoneGroup.add(pupilMesh);
+      });
+
+      const flashGeo = new THREE.CircleGeometry(0.24, 24);
+      const flashMesh = new THREE.Mesh(flashGeo, new THREE.MeshStandardMaterial({ color: 0xfffae6, roughness: 0.3 }));
+      flashMesh.rotation.y = Math.PI;
+      flashMesh.position.set(posX - (isTriple ? 0.75 : 0.6), posY + (isTriple ? 0.85 : -0.6), -(spec.depth / 2 + 0.38));
+      phoneGroup.add(flashMesh);
+    }
+
+    function buildButtons(spec) {
+      const btnMat = chassisMaterials.metal;
+
+      const pBtn = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.4, 0.15), btnMat);
+      pBtn.position.set(spec.width / 2 + 0.1, 1.6, 0);
+      phoneGroup.add(pBtn);
+
+      const vGeo = new THREE.BoxGeometry(0.08, 1.1, 0.15);
+      const vUp = new THREE.Mesh(vGeo, btnMat);
+      vUp.position.set(-spec.width / 2 - 0.1, 2.2, 0);
+      phoneGroup.add(vUp);
+
+      const vDown = new THREE.Mesh(vGeo, btnMat);
+      vDown.position.set(-spec.width / 2 - 0.1, 0.8, 0);
+      phoneGroup.add(vDown);
+
+      const actBtn = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.5, 0.15), btnMat);
+      actBtn.position.set(-spec.width / 2 - 0.1, 3.2, 0);
+      phoneGroup.add(actBtn);
+    }
+
+    function buildFrontCutout(spec) {
+      if (spec.notchType === 'island') {
+        const pillGeo = new THREE.ShapeGeometry(createRoundedRectShape(spec.islandWidth, spec.islandHeight, spec.islandHeight / 2));
+        const pillMesh = new THREE.Mesh(pillGeo, new THREE.MeshBasicMaterial({ color: 0x000000 }));
+        pillMesh.position.set(0, spec.height / 2 - spec.bezel - spec.islandTop, spec.depth / 2 + 0.122);
+        phoneGroup.add(pillMesh);
+      } else {
+        const nW = spec.notchWidth;
+        const nH = spec.notchHeight;
+        const notchShape = new THREE.Shape();
+        notchShape.moveTo(-nW / 2, 0);
+        notchShape.lineTo(nW / 2, 0);
+        notchShape.quadraticCurveTo(nW / 2, -nH, nW / 2 - 0.25, -nH);
+        notchShape.lineTo(-nW / 2 + 0.25, -nH);
+        notchShape.quadraticCurveTo(-nW / 2, -nH, -nW / 2, 0);
+        const notchMesh = new THREE.Mesh(
+          new THREE.ShapeGeometry(notchShape),
+          new THREE.MeshBasicMaterial({ color: 0x000000 })
+        );
+        notchMesh.position.set(0, spec.height / 2 - spec.bezel, spec.depth / 2 + 0.122);
+        phoneGroup.add(notchMesh);
+      }
+    }
+
+    /* =========================================================================
+       SCREEN TEXTURE RENDERER (2D canvas → THREE.CanvasTexture)
+       ========================================================================= */
+    function renderScreenTexture() {
+      const W = screenCanvas.width;
+      const H = screenCanvas.height;
+
+      // Reset canvas so blur filter doesn't bleed between frames
+      screenCtx.clearRect(0, 0, W, H);
+
+      // Wallpaper
+      if (state.customWallpaperImage) {
+        const img = state.customWallpaperImage;
+        const scale = Math.max(W / img.width, H / img.height);
+        const x = W / 2 - (img.width / 2) * scale;
+        const y = H / 2 - (img.height / 2) * scale;
+        screenCtx.drawImage(img, x, y, img.width * scale, img.height * scale);
+      } else {
+        drawPresetWallpaper(state.currentPreset, W, H);
+      }
+
+      // iOS overlays
+      if (state.overlayMode === 'lock') drawIOSLockScreen(W, H);
+      else if (state.overlayMode === 'home') drawIOSHomeScreen(W, H);
+
+      if (screenTexture) screenTexture.needsUpdate = true;
+      syncFlatViewScreen();
+    }
+
+    function syncFlatViewScreen() {
+      const flatCanvas = document.getElementById('flat-screen-canvas');
+      if (!flatCanvas) return;
+      // Dimensions already set in initThree — just redraw
+      if (flatCanvas.width !== screenCanvas.width) {
+        flatCanvas.width = screenCanvas.width;
+        flatCanvas.height = screenCanvas.height;
+      }
+      const fCtx = flatCanvas.getContext('2d');
+      fCtx.clearRect(0, 0, flatCanvas.width, flatCanvas.height);
+      fCtx.drawImage(screenCanvas, 0, 0);
+
+      const spec = DEVICE_MODELS[state.modelKey];
+      const currentColor = spec.colors[state.colorIndex] || spec.colors[0];
+      const flatPhone = document.getElementById('flat-iphone');
+      if (flatPhone) flatPhone.style.borderColor = currentColor.hex;
+
+      const island = document.getElementById('flat-island');
+      const notch = document.getElementById('flat-notch');
+      if (island) island.style.display = spec.notchType === 'island' ? 'flex' : 'none';
+      if (notch) notch.style.display = spec.notchType === 'notch' ? 'block' : 'none';
+    }
+
+    function drawPresetWallpaper(presetKey, W, H) {
+      const ctx = screenCtx;
+
+      switch (presetKey) {
+        case 'gradient-aurora': {
+          const grad = ctx.createLinearGradient(0, 0, W, H);
+          grad.addColorStop(0, '#581c87');
+          grad.addColorStop(0.35, '#ec4899');
+          grad.addColorStop(0.7, '#f97316');
+          grad.addColorStop(1, '#fde047');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+          drawBlurBlob(ctx, W * 0.3, H * 0.4, 400, 'rgba(255,255,255,0.25)');
+          drawBlurBlob(ctx, W * 0.8, H * 0.7, 500, 'rgba(236,72,153,0.3)');
+          break;
+        }
+        case 'cyber-neon': {
+          ctx.fillStyle = '#06010d';
+          ctx.fillRect(0, 0, W, H);
+          const grad = ctx.createRadialGradient(W * 0.5, H * 0.65, 50, W * 0.5, H * 0.65, W * 0.9);
+          grad.addColorStop(0, '#ff007f');
+          grad.addColorStop(0.4, '#7928ca');
+          grad.addColorStop(0.8, '#0d001a');
+          grad.addColorStop(1, '#05000a');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+          ctx.strokeStyle = 'rgba(0, 247, 255, 0.15)';
+          ctx.lineWidth = 3;
+          for (let y = H * 0.6; y < H; y += (y - H * 0.55) * 0.28 + 15) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(W, y);
+            ctx.stroke();
+          }
+          break;
+        }
+        case 'dark-oled': {
+          ctx.fillStyle = '#0a0a0c';
+          ctx.fillRect(0, 0, W, H);
+          const ringGrad = ctx.createLinearGradient(W * 0.2, H * 0.3, W * 0.8, H * 0.7);
+          ringGrad.addColorStop(0, '#38bdf8');
+          ringGrad.addColorStop(0.5, '#6366f1');
+          ringGrad.addColorStop(1, '#ec4899');
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(W / 2, H * 0.48, W * 0.38, 0, Math.PI * 2);
+          ctx.lineWidth = 20;
+          ctx.strokeStyle = ringGrad;
+          ctx.shadowColor = '#6366f1';
+          ctx.shadowBlur = 45;
+          ctx.stroke();
+          ctx.restore();
+          break;
+        }
+        case 'deep-ocean': {
+          const grad = ctx.createLinearGradient(0, 0, 0, H);
+          grad.addColorStop(0, '#041e42');
+          grad.addColorStop(0.4, '#005a9c');
+          grad.addColorStop(0.8, '#00a3e0');
+          grad.addColorStop(1, '#001428');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+          drawBlurBlob(ctx, W * 0.2, H * 0.3, 450, 'rgba(0, 242, 254, 0.25)');
+          break;
+        }
+        case 'desert-dunes': {
+          const grad = ctx.createLinearGradient(0, 0, W, H);
+          grad.addColorStop(0, '#c2410c');
+          grad.addColorStop(0.4, '#ea580c');
+          grad.addColorStop(0.7, '#fb923c');
+          grad.addColorStop(1, '#fed7aa');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+          break;
+        }
+        case 'retro-waves': {
+          const grad = ctx.createLinearGradient(0, 0, 0, H);
+          grad.addColorStop(0, '#0f172a');
+          grad.addColorStop(0.5, '#581c87');
+          grad.addColorStop(1, '#db2777');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+          drawBlurBlob(ctx, W * 0.5, H * 0.5, 380, 'rgba(251, 191, 36, 0.35)');
+          break;
+        }
+        case 'emerald-mist': {
+          const grad = ctx.createLinearGradient(0, 0, W, H);
+          grad.addColorStop(0, '#022c22');
+          grad.addColorStop(0.5, '#065f46');
+          grad.addColorStop(0.85, '#10b981');
+          grad.addColorStop(1, '#6ee7b7');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+          break;
+        }
+        default: {
+          const grad = ctx.createLinearGradient(0, 0, W, H);
+          grad.addColorStop(0, '#0f172a');
+          grad.addColorStop(0.5, '#334155');
+          grad.addColorStop(1, '#64748b');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, W, H);
+        }
+      }
+    }
+
+    function drawBlurBlob(ctx, x, y, r, color) {
+      ctx.save();
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, color);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    /* =========================================================================
+       LIQUID GLASS LOCK SCREEN
+       ========================================================================= */
+    const supportsCanvasFilter = (() => {
+      try {
+        const c = document.createElement('canvas').getContext('2d');
+        c.filter = 'blur(2px)';
+        return c.filter === 'blur(2px)';
+      } catch (e) {
+        return false;
+      }
+    })();
+
+    /**
+     * Draws a Liquid Glass card with real backdrop blur when supported.
+     * Coordinates are in the screen canvas coordinate space (1170 × 2532).
+     */
+    function drawGlassCard(ctx, x, y, w, h, radius, opts = {}) {
+      const blurPx = opts.blur ?? state.glassBlur;
+      const tint = opts.tint ?? 'rgba(255, 255, 255, 0.12)';
+      const stroke = opts.stroke ?? 'rgba(255, 255, 255, 0.32)';
+
+      ctx.save();
+
+      // Outer soft shadow beneath the glass
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
+      ctx.shadowBlur = 30;
+      ctx.shadowOffsetY = 12;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, radius);
+      ctx.fillStyle = 'rgba(0,0,0,0.001)'; // forces shadow without visible fill
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Real blurred backdrop
+      if (supportsCanvasFilter && blurPx > 0) {
+        // Copy the region under the card into a scratch canvas, blur it, draw clipped
+        const scratch = document.createElement('canvas');
+        scratch.width = Math.ceil(w + blurPx * 2);
+        scratch.height = Math.ceil(h + blurPx * 2);
+        const sctx = scratch.getContext('2d');
+        sctx.filter = `blur(${blurPx}px)`;
+        // Draw the source region, offset by padding so blur edges don't clip
+        sctx.drawImage(
+          screenCanvas,
+          Math.max(0, x - blurPx),
+          Math.max(0, y - blurPx),
+          w + blurPx * 2,
+          h + blurPx * 2,
+          0, 0,
+          scratch.width,
+          scratch.height
+        );
+
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, radius);
+        ctx.clip();
+        ctx.drawImage(scratch, x - blurPx, y - blurPx);
+      }
+
+      // Glass tint
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, radius);
+      ctx.fillStyle = tint;
+      ctx.fill();
+
+      // Diagonal highlight (specular streak)
+      const highlight = ctx.createLinearGradient(x, y, x + w, y + h);
+      highlight.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
+      highlight.addColorStop(0.35, 'rgba(255, 255, 255, 0.04)');
+      highlight.addColorStop(0.7, 'rgba(255, 255, 255, 0.10)');
+      highlight.addColorStop(1, 'rgba(255, 255, 255, 0.00)');
+      ctx.fillStyle = highlight;
+      ctx.fill();
+
+      // Inner border highlight (1px stroke)
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = stroke;
+      ctx.beginPath();
+      ctx.roundRect(x + 1, y + 1, w - 2, h - 2, radius);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawIOSLockScreen(W, H) {
+      const ctx = screenCtx;
+      const color = state.clockColor;
+      const time = state.time;
+
+      // Status bar time
+      ctx.fillStyle = color;
+      ctx.font = '600 42px Inter, -apple-system, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(time, 120, 150);
+
+      // Status icons
+      drawStatusBarIcons(ctx, W - 220, 125, color);
+
+      // Lock glyph
+      drawLockGlyph(ctx, W / 2, 290, color);
+
+      // Date
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+      ctx.textAlign = 'center';
+      ctx.font = '500 52px Inter, -apple-system, sans-serif';
+      ctx.shadowColor = 'rgba(0,0,0,0.3)';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = color;
+      ctx.fillText(dateStr, W / 2, 430);
+      ctx.shadowBlur = 0;
+
+      // Clock — iOS 17 style, lightweight, stacked
+      const hours = time.split(':')[0].padStart(2, '0');
+      const minutes = time.split(':')[1];
+      ctx.font = '300 260px Inter, -apple-system, sans-serif';
+      if ('letterSpacing' in ctx) ctx.letterSpacing = '-12px';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = color;
+      ctx.fillText(hours, W / 2, 700);
+      ctx.fillText(minutes, W / 2, 950);
+      if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+      ctx.shadowBlur = 0;
+
+      // ===== Liquid Glass Notification Cards =====
+      // Card 1 — Messages
+      drawNotificationCard(ctx, {
+        x: 90, y: 1080, w: W - 180, h: 200, radius: 56,
+        iconBg: '#22c55e',
+        iconType: 'message',
+        app: 'Messages',
+        title: 'Sarah Chen',
+        body: 'The photos look incredible 😍',
+        time: 'now'
+      });
+
+      // Card 2 — Calendar
+      drawNotificationCard(ctx, {
+        x: 90, y: 1310, w: W - 180, h: 200, radius: 56,
+        iconBg: '#ffffff',
+        iconType: 'calendar',
+        app: 'Calendar',
+        title: 'Design Review',
+        body: 'Today at 3:00 PM · Studio 4',
+        time: '12m ago'
+      });
+
+      // Card 3 — Fitness
+      drawNotificationCard(ctx, {
+        x: 90, y: 1540, w: W - 180, h: 200, radius: 56,
+        iconBg: '#84cc16',
+        iconType: 'fitness',
+        app: 'Fitness',
+        title: 'Move Goal',
+        body: "You're 80% of the way there!",
+        time: '1h ago'
+      });
+
+      // Bottom shortcuts
+      drawCircleShortcut(ctx, 160, H - 300, 'flashlight', color);
+      drawCircleShortcut(ctx, W - 160, H - 300, 'camera', color);
+
+      // Home indicator
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.roundRect(W / 2 - 190, H - 70, 380, 12, 6);
+      ctx.fill();
+    }
+
+    function drawNotificationCard(ctx, cfg) {
+      const { x, y, w, h, radius, iconBg, iconType, app, title, body, time } = cfg;
+
+      // Glass background with real blur
+      drawGlassCard(ctx, x, y, w, h, radius);
+
+      // App icon circle
+      const iconSize = 96;
+      const iconX = x + 36;
+      const iconY = y + (h - iconSize) / 2;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(iconX, iconY, iconSize, iconSize, 24);
+      ctx.fillStyle = iconBg;
+      ctx.fill();
+      drawCardIcon(ctx, iconX + iconSize / 2, iconY + iconSize / 2, iconType);
+      ctx.restore();
+
+      // Text block
+      const textX = iconX + iconSize + 28;
+      const textMaxW = x + w - textX - 40;
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+
+      // App name + time (top line)
+      ctx.font = '600 30px Inter, -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillText(app, textX, y + 62);
+
+      ctx.font = '400 26px Inter, -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      const timeW = ctx.measureText(time).width;
+      ctx.textAlign = 'right';
+      ctx.fillText(time, x + w - 40, y + 62);
+
+      // Title (bold)
+      ctx.textAlign = 'left';
+      ctx.font = '600 36px Inter, -apple-system, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(title, textX, y + 112, textMaxW);
+
+      // Body
+      ctx.font = '400 30px Inter, -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillText(body, textX, y + 158, textMaxW);
+    }
+
+    function drawCardIcon(ctx, cx, cy, type) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.fillStyle = '#ffffff';
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+
+      if (type === 'message') {
+        ctx.beginPath();
+        ctx.roundRect(cx - 22, cy - 16, 44, 30, 10);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - 8, cy + 14);
+        ctx.lineTo(cx - 14, cy + 22);
+        ctx.lineTo(cx - 2, cy + 16);
+        ctx.fill();
+      } else if (type === 'calendar') {
+        ctx.fillStyle = '#ef4444';
+        ctx.font = '700 44px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('29', cx, cy + 2);
+      } else if (type === 'fitness') {
+        ctx.beginPath();
+        ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, 12, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    function drawStatusBarIcons(ctx, x, y, color) {
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3.5;
+      // Battery
+      ctx.strokeRect(x + 75, y - 18, 55, 26);
+      ctx.fillRect(x + 79, y - 14, 34, 18);
+      ctx.fillRect(x + 130, y - 11, 4, 12);
+      // Signal bars
+      for (let b = 0; b < 4; b++) {
+        ctx.fillRect(x + b * 10, y + 6 - b * 6, 6, b * 6 + 4);
+      }
+      ctx.restore();
+    }
+
+    function drawLockGlyph(ctx, x, y, color) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(x, y - 12, 16, Math.PI, 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.roundRect(x - 22, y - 8, 44, 34, 7);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawCircleShortcut(ctx, x, y, type, color) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.beginPath();
+      ctx.arc(x, y, 62, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      if (type === 'flashlight') {
+        ctx.strokeRect(x - 14, y - 18, 28, 42);
+        ctx.beginPath();
+        ctx.arc(x, y - 6, 8, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.roundRect(x - 24, y - 16, 48, 34, 8);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y + 1, 10, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    /* =========================================================================
+       HOME SCREEN (kept from original)
+       ========================================================================= */
+    function drawIOSHomeScreen(W, H) {
+      const ctx = screenCtx;
+      const color = '#ffffff';
+
+      ctx.fillStyle = color;
+      ctx.font = '600 42px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(state.time, 120, 150);
+      drawStatusBarIcons(ctx, W - 220, 125, color);
+
+      const startX = 130, startY = 320, iconSize = 160, gapX = 90, gapY = 85;
+      const appIcons = [
+        { name: 'FaceTime', bg: '#22c55e', icon: 'video' },
+        { name: 'Calendar', bg: '#ffffff', icon: 'cal', textCol: '#ef4444' },
+        { name: 'Photos', bg: '#ffffff', icon: 'photo' },
+        { name: 'Camera', bg: '#4b5563', icon: 'cam' },
+        { name: 'Mail', bg: '#3b82f6', icon: 'mail' },
+        { name: 'Clock', bg: '#000000', icon: 'clock' },
+        { name: 'Maps', bg: '#38bdf8', icon: 'map' },
+        { name: 'Weather', bg: '#0ea5e9', icon: 'cloud' },
+        { name: 'Reminders', bg: '#ffffff', icon: 'list', textCol: '#3b82f6' },
+        { name: 'Notes', bg: '#fbbf24', icon: 'note' },
+        { name: 'Stocks', bg: '#09090b', icon: 'chart' },
+        { name: 'Books', bg: '#f97316', icon: 'book' },
+        { name: 'App Store', bg: '#0284c7', icon: 'store' },
+        { name: 'Podcasts', bg: '#a855f7', icon: 'pod' },
+        { name: 'Music', bg: '#ec4899', icon: 'music' },
+        { name: 'Health', bg: '#ffffff', icon: 'heart', textCol: '#ef4444' },
+        { name: 'Wallet', bg: '#18181b', icon: 'wallet' },
+        { name: 'Settings', bg: '#64748b', icon: 'gear' },
+        { name: 'Files', bg: '#38bdf8', icon: 'folder' },
+        { name: 'Fitness', bg: '#84cc16', icon: 'fit' }
+      ];
+
+      for (let i = 0; i < appIcons.length; i++) {
+        const row = Math.floor(i / 4);
+        const col = i % 4;
+        const x = startX + col * (iconSize + gapX);
+        const y = startY + row * (iconSize + gapY);
+
+        ctx.save();
+        ctx.fillStyle = appIcons[i].bg;
+        ctx.shadowColor = 'rgba(0,0,0,0.35)';
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.roundRect(x, y, iconSize, iconSize, 38);
+        ctx.fill();
+        ctx.restore();
+
+        drawAppGlyph(ctx, x + iconSize / 2, y + iconSize / 2, appIcons[i]);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = 'rgba(0,0,0,0.6)';
+        ctx.shadowBlur = 8;
+        ctx.font = '500 24px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(appIcons[i].name, x + iconSize / 2, y + iconSize + 36);
+        ctx.shadowBlur = 0;
+      }
+
+      const dockH = 240, dockW = W - 140, dockX = 70, dockY = H - dockH - 70;
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+      ctx.beginPath();
+      ctx.roundRect(dockX, dockY, dockW, dockH, 70);
+      ctx.fill();
+      ctx.restore();
+
+      const dockApps = [
+        { name: 'Phone', bg: '#22c55e', icon: 'phone' },
+        { name: 'Safari', bg: '#38bdf8', icon: 'safari' },
+        { name: 'Messages', bg: '#22c55e', icon: 'msg' },
+        { name: 'Music', bg: '#ec4899', icon: 'music' }
+      ];
+      const dockGap = (dockW - 4 * iconSize) / 5;
+      for (let j = 0; j < 4; j++) {
+        const dx = dockX + dockGap + j * (iconSize + dockGap);
+        const dy = dockY + (dockH - iconSize) / 2;
+        ctx.save();
+        ctx.fillStyle = dockApps[j].bg;
+        ctx.beginPath();
+        ctx.roundRect(dx, dy, iconSize, iconSize, 38);
+        ctx.fill();
+        ctx.restore();
+        drawAppGlyph(ctx, dx + iconSize / 2, dy + iconSize / 2, dockApps[j]);
+      }
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect(W / 2 - 190, H - 45, 380, 12, 6);
+      ctx.fill();
+    }
+
+    function drawAppGlyph(ctx, cx, cy, app) {
+      ctx.save();
+      ctx.fillStyle = app.textCol || '#ffffff';
+      ctx.strokeStyle = app.textCol || '#ffffff';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      if (app.icon === 'cal') {
+        ctx.fillStyle = '#ef4444';
+        ctx.font = '700 48px Inter';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('29', cx, cy);
+      } else {
+        ctx.beginPath();
+        ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    /* =========================================================================
+       CAMERA / VIEW MODES
+       ========================================================================= */
+    function setCameraView(viewKey) {
+      if (!camera || !controls) return;
+      controls.autoRotate = false;
+      document.getElementById('btn-autorotate').classList.remove('active');
+
+      if (viewKey === 'front') {
+        camera.position.set(0, 0, 32);
+        controls.target.set(0, 0, 0);
+        phoneGroup.rotation.set(0, 0, 0);
+      } else if (viewKey === 'angled') {
+        camera.position.set(15, 10, 26);
+        controls.target.set(0, 0, 0);
+      } else if (viewKey === 'back') {
+        camera.position.set(0, 0, -32);
+        controls.target.set(0, 0, 0);
+      } else if (viewKey === 'side') {
+        camera.position.set(28, 0, 5);
+        controls.target.set(0, 0, 0);
+      }
+      controls.update();
+    }
+
+    function toggleViewMode(mode) {
+      state.viewMode = mode;
+      const flatWrapper = document.getElementById('flat-mockup-wrapper');
+      const canvasContainer = document.getElementById('canvas-container');
+      const camBar = document.getElementById('camera-presets-bar');
+      const btn3D = document.getElementById('view-mode-3d');
+      const btn2D = document.getElementById('view-mode-2d');
+
+      if (mode === '2d') {
+        flatWrapper.classList.remove('hidden');
+        canvasContainer.classList.add('opacity-30', 'pointer-events-none');
+        camBar.classList.add('hidden');
+        btn2D.classList.add('bg-white/20', 'text-white');
+        btn2D.classList.remove('text-gray-400');
+        btn3D.classList.remove('bg-white/20', 'text-white');
+        btn3D.classList.add('text-gray-400');
+        syncFlatViewScreen();
+      } else {
+        flatWrapper.classList.add('hidden');
+        canvasContainer.classList.remove('opacity-30', 'pointer-events-none');
+        camBar.classList.remove('hidden');
+        btn3D.classList.add('bg-white/20', 'text-white');
+        btn3D.classList.remove('text-gray-400');
+        btn2D.classList.remove('bg-white/20', 'text-white');
+        btn2D.classList.add('text-gray-400');
+      }
+    }
+
+    /* =========================================================================
+       CONTROLS
+       ========================================================================= */
+    function updateColorSwatches() {
+      const swatchesContainer = document.getElementById('chassis-swatches');
+      swatchesContainer.innerHTML = '';
+      const spec = DEVICE_MODELS[state.modelKey];
+
+      spec.colors.forEach((col, idx) => {
+        const btn = document.createElement('button');
+        btn.className = `w-7 h-7 rounded-full border-2 transition-transform ${
+          idx === state.colorIndex ? 'border-blue-400 scale-110 shadow-lg' : 'border-transparent hover:scale-105'
+        }`;
+        btn.style.backgroundColor = col.hex;
+        btn.title = col.name;
+        btn.onclick = () => {
+          state.colorIndex = idx;
+          document.getElementById('color-name').innerText = col.name;
+          updateColorSwatches();
+          applyColorToModel();
+          syncFlatViewScreen();
+        };
+        swatchesContainer.appendChild(btn);
+      });
+
+      document.getElementById('color-name').innerText = spec.colors[state.colorIndex].name;
+    }
+
+    function applyColorToModel() {
+      const spec = DEVICE_MODELS[state.modelKey];
+      const currentColor = spec.colors[state.colorIndex];
+      if (chassisMaterials.metal) {
+        chassisMaterials.metal.color.set(currentColor.hex);
+        chassisMaterials.metal.metalness = currentColor.metalness;
+        chassisMaterials.metal.roughness = currentColor.roughness;
+      }
+      if (chassisMaterials.backGlass) chassisMaterials.backGlass.color.set(currentColor.backHex);
+      if (chassisMaterials.cameraBump) chassisMaterials.cameraBump.color.set(currentColor.backHex);
+    }
+
+    function switchModel(newModelKey) {
+      if (!DEVICE_MODELS[newModelKey]) return;
+      state.modelKey = newModelKey;
+      state.colorIndex = 0;
+      document.getElementById('model-badge').innerText = DEVICE_MODELS[newModelKey].name;
+
+      document.querySelectorAll('.model-btn').forEach(btn => {
+        if (btn.dataset.model === newModelKey) {
+          btn.classList.add('active', 'bg-white/20', 'text-white');
+          btn.classList.remove('text-gray-400');
+        } else {
+          btn.classList.remove('active', 'bg-white/20', 'text-white');
+          btn.classList.add('text-gray-400');
+        }
+      });
+
+      updateColorSwatches();
+      buildPhoneModel(newModelKey);
+      renderScreenTexture();
+    }
+
+    function setupEventListeners() {
+      document.querySelectorAll('.model-btn').forEach(btn => {
+        btn.addEventListener('click', () => switchModel(btn.dataset.model));
+      });
+
+      document.getElementById('view-mode-3d').addEventListener('click', () => toggleViewMode('3d'));
+      document.getElementById('view-mode-2d').addEventListener('click', () => toggleViewMode('2d'));
+
+      document.querySelectorAll('.cam-preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.cam-preset-btn').forEach(b => {
+            b.classList.remove('bg-white/20', 'text-white');
+            b.classList.add('text-gray-400');
+          });
+          btn.classList.add('bg-white/20', 'text-white');
+          btn.classList.remove('text-gray-400');
+          setCameraView(btn.dataset.view);
+        });
+      });
+
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.mode-btn').forEach(b => {
+            b.classList.remove('active', 'bg-white/20', 'text-white');
+            b.classList.add('text-gray-400');
+          });
+          btn.classList.add('active', 'bg-white/20', 'text-white');
+          btn.classList.remove('text-gray-400');
+          state.overlayMode = btn.dataset.mode;
+          document.getElementById('lockscreen-settings').style.display =
+            state.overlayMode === 'lock' ? 'block' : 'none';
+          renderScreenTexture();
+        });
+      });
+
+      document.querySelectorAll('.preset-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          state.currentPreset = chip.dataset.preset;
+          state.customWallpaperImage = null;
+          renderScreenTexture();
+        });
+      });
+
+      const uploadInput = document.getElementById('wallpaper-input');
+      uploadInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const img = new Image();
+          img.onload = () => {
+            state.customWallpaperImage = img;
+            document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+            renderScreenTexture();
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+
+      document.getElementById('clock-color').addEventListener('input', e => {
+        state.clockColor = e.target.value;
+        renderScreenTexture();
+      });
+
+      const blurSlider = document.getElementById('glass-blur');
+      const blurVal = document.getElementById('glass-blur-val');
+      blurSlider.addEventListener('input', e => {
+        state.glassBlur = parseInt(e.target.value, 10);
+        blurVal.textContent = state.glassBlur + 'px';
+        renderScreenTexture();
+      });
+
+      document.getElementById('glass-reflection').addEventListener('input', e => {
+        state.glassReflection = parseFloat(e.target.value);
+        if (screenGlassMesh) screenGlassMesh.material.opacity = state.glassReflection;
+      });
+
+      document.getElementById('stage-bg').addEventListener('change', e => {
+        const val = e.target.value;
+        if (!scene) return;
+        if (val === 'dark') scene.background = new THREE.Color(0x0a0b10);
+        else if (val === 'midnight') scene.background = new THREE.Color(0x040817);
+        else if (val === 'warm') scene.background = new THREE.Color(0x1a1614);
+        else if (val === 'pure') scene.background = new THREE.Color(0x000000);
+      });
+
+      const autoRotBtn = document.getElementById('btn-autorotate');
+      autoRotBtn.addEventListener('click', () => {
+        state.autoRotate = !state.autoRotate;
+        if (controls) {
+          controls.autoRotate = state.autoRotate;
+          controls.autoRotateSpeed = 2.0;
+        }
+        autoRotBtn.classList.toggle('active', state.autoRotate);
+      });
+
+      document.getElementById('btn-screenshot').addEventListener('click', exportMockup);
+    }
+
+    /* =========================================================================
+       EXPORT
+       ========================================================================= */
+    function exportMockup() {
+      const mode = document.getElementById('export-mode').value;
+
+      if (mode === 'screen') {
+        exportScreenOnly();
+      } else if (mode === 'full') {
+        exportFullMockup(false);
+      } else if (mode === 'transparent') {
+        exportFullMockup(true);
+      }
+    }
+
+    function exportScreenOnly() {
+      // The screen canvas is always up-to-date — just download it
+      const dataURL = screenCanvas.toDataURL('image/png');
+      triggerDownload(dataURL, `iphone-wallpaper-${state.modelKey}-${Date.now()}.png`);
+    }
+
+    function exportFullMockup(transparent) {
+      if (state.viewMode === '2d' || !renderer) {
+        export2DMockup(transparent);
+        return;
+      }
+
+      // Save scene state
+      const originalBg = scene.background;
+      const originalClearAlpha = renderer.getClearAlpha();
+      const originalClearColor = new THREE.Color();
+      renderer.getClearColor(originalClearColor);
+      const originalPhonePos = phoneGroup.position.clone();
+      const originalPhoneRot = phoneGroup.rotation.clone();
+
+      // Fit camera to phone bounding box
+      const bbox = new THREE.Box3().setFromObject(phoneGroup);
+      const size = bbox.getSize(new THREE.Vector3());
+      const center = bbox.getCenter(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y);
+      const fov = camera.fov * (Math.PI / 180);
+      const dist = maxDim / (2 * Math.tan(fov / 2)) * 1.15;
+
+      const origCamPos = camera.position.clone();
+      const origTarget = controls ? controls.target.clone() : new THREE.Vector3(0, 0, 0);
+
+      // Face front, centered
+      phoneGroup.position.set(0, 0, 0);
+      phoneGroup.rotation.set(0, 0, 0);
+      camera.position.set(0, 0, dist);
+      camera.lookAt(0, 0, 0);
+      if (controls) controls.target.set(0, 0, 0);
+
+      // Background
+      if (transparent) {
+        scene.background = null;
+        renderer.setClearAlpha(0);
+      } else {
+        scene.background = new THREE.Color(0x0a0b10);
+        renderer.setClearAlpha(1);
+      }
+
+      renderer.render(scene, camera);
+      const dataURL = renderer.domElement.toDataURL('image/png');
+      triggerDownload(
+        dataURL,
+        `iphone-mockup-${state.modelKey}-${transparent ? 'transparent' : 'full'}-${Date.now()}.png`
+      );
+
+      // Restore
+      scene.background = originalBg;
+      renderer.setClearAlpha(originalClearAlpha);
+      renderer.setClearColor(originalClearColor, originalClearAlpha);
+      phoneGroup.position.copy(originalPhonePos);
+      phoneGroup.rotation.copy(originalPhoneRot);
+      camera.position.copy(origCamPos);
+      if (controls) controls.target.copy(origTarget);
+      renderer.render(scene, camera);
+    }
+
+    function export2DMockup(transparent) {
+      // Compose the 2D frame + screen into a fresh canvas at 2× device size
+      const frameW = 640;   // 320 * 2
+      const frameH = 1300;  // 650 * 2
+      const bezel = 20;     // 10 * 2
+
+      const out = document.createElement('canvas');
+      out.width = frameW + bezel * 2;
+      out.height = frameH + bezel * 2;
+      const octx = out.getContext('2d');
+
+      const spec = DEVICE_MODELS[state.modelKey];
+      const color = spec.colors[state.colorIndex] || spec.colors[0];
+
+      // Frame
+      if (!transparent) {
+        octx.fillStyle = 'rgba(0,0,0,0)';
+        octx.fillRect(0, 0, out.width, out.height);
+      }
+      octx.fillStyle = color.hex;
+      octx.beginPath();
+      octx.roundRect(0, 0, out.width, out.height, 108);
+      octx.fill();
+
+      // Inner bezel (black)
+      octx.fillStyle = '#0b0b0e';
+      octx.beginPath();
+      octx.roundRect(bezel, bezel, frameW, frameH, 88);
+      octx.fill();
+
+      // Screen
+      octx.save();
+      octx.beginPath();
+      octx.roundRect(bezel, bezel, frameW, frameH, 88);
+      octx.clip();
+      octx.drawImage(screenCanvas, bezel, bezel, frameW, frameH);
+      octx.restore();
+
+      // Dynamic Island / Notch
+      if (spec.notchType === 'island') {
+        octx.fillStyle = '#000000';
+        octx.beginPath();
+        const islandW = 224;
+        const islandH = 56;
+        octx.roundRect(
+          bezel + frameW / 2 - islandW / 2,
+          bezel + 24,
+          islandW,
+          islandH,
+          islandH / 2
+        );
+        octx.fill();
+      } else {
+        octx.fillStyle = '#000000';
+        octx.beginPath();
+        octx.roundRect(bezel + frameW / 2 - 150, bezel, 300, 56, 28);
+        octx.fill();
+      }
+
+      const dataURL = out.toDataURL('image/png');
+      triggerDownload(dataURL, `iphone-mockup-2d-${Date.now()}.png`);
+    }
+
+    function triggerDownload(dataURL, filename) {
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = dataURL;
+      link.click();
+    }
+
+    /* =========================================================================
+       RENDER LOOP
+       ========================================================================= */
+    function animate() {
+      requestAnimationFrame(animate);
+      if (controls) controls.update();
+
+      if (state.viewMode === '3d' && renderer && scene && camera) {
+        if (!state.autoRotate) {
+          const time = Date.now() * 0.0012;
+          phoneGroup.position.y = Math.sin(time * 1.5) * 0.15;
+        } else {
+          phoneGroup.position.y = 0;
+        }
+        renderer.render(scene, camera);
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initThree();
+      updateColorSwatches();
+      setupEventListeners();
+    });
+  </script>
+</body>
+</html>
